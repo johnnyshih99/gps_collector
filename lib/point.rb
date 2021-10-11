@@ -11,28 +11,89 @@ class Point
   def response
     response = Rack::Response.new
     if @request.post?
+      params = JSON.parse(@request.body.read)
       case @request.path
       when "/"
-        response.write("post")
+        geometries = nil
+        if params.is_a?(Array)
+          geometries = params
+        elsif params.is_a?(Hash) && params["type"] == "GeometryCollection"
+          geometries = params["geometries"]
+        else
+          return bad_request
+        end
+
+        values = []
+        geometries.each do |geom|
+          if geom["type"] == "Point"
+            coord = geom["coordinates"]
+            values << "('POINT(#{coord.join(" ")})')"
+          end
+        end
+        unless values.empty?
+          query = "INSERT INTO points VALUES #{values.join(",")}"
+          @db.exec(query)
+        end
       else
-        response = not_found
+        return not_found
       end
     elsif @request.get?
+      params = @request.params
       case @request.path
       when "/"
-        response.write("root")
-      when "/test"
-        response.write("test")
+        if params["type"] == "Point"
+          coord = params['coordinates']
+          radius = params["radius"].to_i
+
+          query = <<-SQL
+            SELECT ST_AsGeoJSON(pt) FROM points
+            WHERE ST_DWithin(
+              points.pt,
+              ST_Point(#{coord}),
+              #{radius}
+            );
+          SQL
+          result = []
+          @db.exec(query) do |res|
+            res.each do |row|
+              result << JSON.parse(row["st_asgeojson"])
+            end
+          end
+          response.write(result.to_json)
+        elsif params["type"] == "Polygon"
+          lineString = params["lineString"]
+          
+          query = <<-SQL
+            SELECT ST_AsGeoJSON(pt) FROM points
+            WHERE ST_Within(
+              points.pt,
+              ST_MakePolygon('LINESTRING(#{lineString})')
+            );
+          SQL
+          result = []
+          @db.exec(query) do |res|
+            res.each do |row|
+              result << JSON.parse(row["st_asgeojson"])
+            end
+          end
+          response.write(result.to_json)
+        else
+          return bad_request
+        end
       else
-        response = not_found
+        return not_found
       end
     else
-      response = not_found
+      return not_found
     end
     response
   end
 
   def not_found
     Rack::Response.new("Not Found", 404)
+  end
+
+  def bad_request
+    Rack::Response.new("Bad Request", 400)
   end
 end
