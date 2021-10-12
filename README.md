@@ -11,29 +11,29 @@ The app has a GET endpoint to get GeoJSON point(s) within a radius around a poin
 
 Parameter validation/handling is minimal at best. I'm not sure how far into it I should be doing, so I left it for now. The kind of input params the system is expecting are shown in the test section.  
 
-* Ruby version
+* Ruby version  
 ruby 2.5.3  
 bundler 1.17.1
 
-* System dependencies
-docker
+* System dependencies  
+docker  
 docker-compose
 
-* Configuration
+* Configuration  
 First run `bundle install`  
-Set up the database described below
+Set up the database described below  
 run `bundle exec rackup -Ilib` to start the server
 
-* Database
+* Database  
 To stand up the database image  
 run `docker-compose up -d db`  
 For database initialization  
 run `bundle exec ruby lib/db.rb`  
 
-* Linting
+* Linting  
 run `bundle exec rubocop`
 
-* Testing
+* Testing  
 Manual testing. Using javascript to send requests (I used the browser console)  
 There really should be automated tests.
 
