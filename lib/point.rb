@@ -1,3 +1,6 @@
+# frozen_string_literal: true
+
+# API service to insert and retrive GEOJson points
 class Point
   def self.call(env)
     new(env).response.finish
@@ -5,7 +8,7 @@ class Point
 
   def initialize(env)
     @request = Rack::Request.new(env)
-    @db = PG.connect(host:"localhost", port:5432, user: "gps_collector", dbname: "gps_collector")
+    @db = PG.connect(host: 'localhost', port: 5432, user: 'gps_collector', dbname: 'gps_collector')
   end
 
   def response
@@ -13,7 +16,7 @@ class Point
     if @request.post?
       params = JSON.parse(@request.body.read)
       case @request.path
-      when "/"
+      when '/'
         response = insert_points(params)
       else
         return not_found
@@ -21,7 +24,7 @@ class Point
     elsif @request.get?
       params = @request.params
       case @request.path
-      when "/"
+      when '/'
         response = get_points(params)
       else
         return not_found
@@ -32,63 +35,67 @@ class Point
     response
   end
 
-  def insert_points(params)
-    response = Rack::Response.new
+  def process_insert_points_params(params)
     geometries = nil
     if params.is_a?(Array)
       geometries = params
-    elsif params.is_a?(Hash) && params["type"] == "GeometryCollection"
-      geometries = params["geometries"]
-    else
-      return bad_request
+    elsif params.is_a?(Hash) && params['type'] == 'GeometryCollection'
+      geometries = params['geometries']
     end
+    geometries
+  end
+
+  def insert_points(params)
+    response = Rack::Response.new
+    geometries = process_insert_points_params(params)
+    return bad_request if geometries.nil?
 
     values = []
     geometries.each do |geom|
-      if geom["type"] == "Point"
-        coord = geom["coordinates"]
-        values << "('POINT(#{coord.join(" ")})')"
+      if geom['type'] == 'Point'
+        coord = geom['coordinates']
+        values << "('POINT(#{coord.join(' ')})')"
       end
     end
+
     unless values.empty?
-      query = "INSERT INTO points VALUES #{values.join(",")}"
+      query = "INSERT INTO points VALUES #{values.join(',')}"
       @db.exec(query)
     end
     response
   end
 
-  def get_points(params)
-    response = Rack::Response.new
-    if params["type"] == "Point"
+  def process_get_points_params(params)
+    case params['type']
+    when 'Point'
       coord = params['coordinates']
-      radius = params["radius"].to_i
+      radius = params['radius'].to_i
 
       query = <<-SQL
-        SELECT ST_AsGeoJSON(pt) FROM points
-        WHERE ST_DWithin(
-          points.pt,
-          ST_Point(#{coord}),
-          #{radius}
-        );
+        SELECT ST_AsGeoJSON(pt) FROM points WHERE ST_DWithin(
+          points.pt, ST_Point(#{coord}), #{radius});
       SQL
-    elsif params["type"] == "Polygon"
-      lineString = params["lineString"]
-      
+    when 'Polygon'
+      line_string = params['lineString']
+
       query = <<-SQL
-        SELECT ST_AsGeoJSON(pt) FROM points
-        WHERE ST_Within(
-          points.pt,
-          ST_MakePolygon('LINESTRING(#{lineString})')
-        );
+        SELECT ST_AsGeoJSON(pt) FROM points WHERE ST_Within(
+          points.pt, ST_MakePolygon('LINESTRING(#{line_string})'));
       SQL
     else
-      return bad_request
+      query = nil
     end
+    query
+  end
+
+  def get_points(params)
+    response = Rack::Response.new
+    query = process_get_points_params(params)
 
     result = []
     @db.exec(query) do |res|
       res.each do |row|
-        result << JSON.parse(row["st_asgeojson"])
+        result << JSON.parse(row['st_asgeojson'])
       end
     end
     response.write(result.to_json)
@@ -96,10 +103,10 @@ class Point
   end
 
   def not_found
-    Rack::Response.new("Not Found", 404)
+    Rack::Response.new('Not Found', 404)
   end
 
   def bad_request
-    Rack::Response.new("Bad Request", 400)
+    Rack::Response.new('Bad Request', 400)
   end
 end
